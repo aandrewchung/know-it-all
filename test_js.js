@@ -57,6 +57,8 @@ async function scrapeImages() {
 
   // Close the browser
   await browser.close();
+
+  return imageUrls.length > 6 ? imageUrls.slice(0, 6) : imageUrls;
 }
 
 // Export the function if needed for external use
