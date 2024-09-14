@@ -3,7 +3,6 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Opencv JS</title>
-    <!-- Load OpenCV -->
     <script async src="js/opencv.js" onload="openCvReady();"></script>
     <script src="js/utils.js"></script>
     <style>
@@ -20,21 +19,17 @@
             object-fit: cover;
         }
 
-        /* Style for the container holding images */
         #image_container {
             position: absolute;
-            top: 10px; /* Adjust positioning as needed */
-            left: 10px;
-            z-index: 10; /* Make sure images are on top of the video */
-            display: flex;
-            flex-wrap: wrap;
-            gap: 10px;
+            top: 0;
+            left: 0;
+            z-index: 10;
         }
 
         .scraped-image {
-            max-width: 150px; /* Adjust size as needed */
-            max-height: 150px;
-            border: 2px solid white;
+            max-width: 100px;
+            max-height: 100px;
+            position: absolute;
         }
 
         body, html {
@@ -46,12 +41,10 @@
     </style>
 </head>
 <body>
-    <video id="cam_input" height="480" width="640"></video>
+    <video id="cam_input" height=1080 width=1920></video>
     <canvas id="canvas_output"></canvas>
-    <!-- Image container to display scraped images -->
     <div id="image_container"></div>
 
-    <!-- Regular script tag to ensure openCvReady is available globally -->
     <script>
     function openCvReady() {
         cv['onRuntimeInitialized'] = () => {
@@ -66,6 +59,7 @@
             });
 
             const canvas = document.getElementById('canvas_output');
+            console.log("HEIGHT WIDTH", video.height, video.width)
             let src = new cv.Mat(video.height, video.width, cv.CV_8UC4);
             let dst = new cv.Mat(video.height, video.width, cv.CV_8UC1);
             let gray = new cv.Mat();
@@ -82,7 +76,8 @@
             let faceTracked = false;
             let trackingStartTime = null;
             const trackingThreshold = 3000;
-            let faceLocked = false; // Indicates whether the face has been locked
+            let faceLocked = false;
+            let imagesPlaced = false;
 
             // Event listener to reset face-locking process when Enter key is pressed
             document.addEventListener('keydown', function(event) {
@@ -91,18 +86,19 @@
                 }
             });
 
-            // Function to reset all face-locking variables
+            // Function to reset all face-locking variables and clear images
             function resetFaceLocking() {
                 faceLocked = false;
                 faceTracked = false;
                 trackingStartTime = null;
-                
+
                 // Clear the image container
                 const imageContainer = document.getElementById('image_container');
                 imageContainer.innerHTML = ''; // Clear any images
 
-                console.log("Face locking has been reset, and images have been cleared.");
+                imagesPlaced = false;
 
+                console.log("Face locking has been reset, and images have been cleared.");
             }
 
             function processVideo() {
@@ -117,10 +113,8 @@
                 let largestFace = null;
                 let largestArea = 0;
 
-                // Continue detecting faces even if faceLocked is true
                 try {
                     classifier.detectMultiScale(gray, faces, 1.1, 3, 0);
-                    
                     for (let i = 0; i < faces.size(); ++i) {
                         let face = faces.get(i);
                         let faceArea = face.width * face.height;
@@ -136,30 +130,29 @@
                     console.error("Error during face detection:", err);
                 }
 
-                // If a largest face is found, draw the rectangle
                 if (largestFace) {
                     let point1 = new cv.Point(largestFace.x, largestFace.y);
                     let point2 = new cv.Point(largestFace.x + largestFace.width, largestFace.y + largestFace.height);
-                    
-                    // Change the rectangle color to red if the face is locked, otherwise green
                     let color = faceLocked ? [255, 0, 0, 255] : [0, 255, 0, 255];
                     cv.rectangle(dst, point1, point2, color, 2);
 
-                    // Start tracking time if not already started
                     if (!trackingStartTime) {
                         trackingStartTime = Date.now();
                     } else if (Date.now() - trackingStartTime > trackingThreshold && !faceTracked) {
                         faceTracked = true;
 
-                        // Once the face has been tracked for more than 3 seconds, lock the face
                         if (!faceLocked) {
                             console.log("Face has been tracked for more than 3 seconds!");
-                            captureFaceScreenshot(largestFace); // Capture screenshot once
-                            faceLocked = true;  // Lock the face
-
-                            // Scrape images test
-                            displayScrapedImages();
+                            captureFaceScreenshot(largestFace); 
+                            faceLocked = true;
+                            displayScrapedImages(largestFace.x, largestFace.y, largestFace.width, largestFace.height);
+                            imagesPlaced = true;
                         }
+                    }
+
+                    // Update image positions around the face as long as it is tracked
+                    if (faceLocked && imagesPlaced) {
+                        updateImagePositions(largestFace.x, largestFace.y, largestFace.width, largestFace.height);
                     }
                 } else {
                     trackingStartTime = null;
@@ -200,29 +193,66 @@
                 document.body.removeChild(link);
             }
 
-            // Function to display the scraped images over the video
-            async function displayScrapedImages() {
+            // Function to display the scraped images in a circle around the face
+            async function displayScrapedImages(faceX, faceY, faceWidth, faceHeight) {
                 try {
                     const response = await fetch('http://localhost:3000/scrape-images'); // Backend URL
                     const data = await response.json();
 
-                    if (data.success) {
+                    if (data.success && Array.isArray(data.images) && data.images.length > 0) {
                         const imageContainer = document.getElementById('image_container');
                         imageContainer.innerHTML = ''; // Clear any existing images
 
-                        console.log(data)
-                        data.images.forEach((src) => {
+                        // Get the center of the face
+                        const faceCenterX = faceX + faceWidth / 2;
+                        const faceCenterY = faceY + faceHeight / 2;
+
+                        const radius = 300; // The radius for the circular placement of images
+                        const numImages = data.images.length;
+                        const angleStep = (2 * Math.PI) / numImages; // The angle between each image
+
+                        // Place images in a circle around the face
+                        data.images.forEach((src, index) => {
+                            const angle = index * angleStep; // The current angle for this image
+                            const imgX = faceCenterX + radius * Math.cos(angle) - 50; // Adjust to offset the image size
+                            const imgY = faceCenterY + radius * Math.sin(angle) - 50; // Adjust to offset the image size
+
                             const img = document.createElement('img');
                             img.src = src;
                             img.className = 'scraped-image';
+                            img.style.position = 'absolute';
+                            img.style.left = `${imgX}px`;
+                            img.style.top = `${imgY}px`;
+
                             imageContainer.appendChild(img);
                         });
                     } else {
-                        console.error('Error scraping images:', data.message);
+                        console.error('No images found or scraping was unsuccessful:', data.message || 'No message from server');
                     }
                 } catch (error) {
                     console.error('Error occurred during image scraping:', error);
                 }
+            }
+
+            // Function to update the image positions dynamically as the face moves
+            function updateImagePositions(faceX, faceY, faceWidth, faceHeight) {
+                const faceCenterX = faceX + faceWidth / 2;
+                const faceCenterY = faceY + faceHeight / 2;
+
+                const radius = 200;
+                const imageContainer = document.getElementById('image_container');
+                const images = imageContainer.querySelectorAll('.scraped-image');
+                const numImages = images.length;
+                const angleStep = (2 * Math.PI) / numImages;
+
+                images.forEach((img, index) => {
+                    const angle = index * angleStep;
+                    const imgX = faceCenterX + radius * Math.cos(angle) - 50;
+                    const imgY = faceCenterY + radius * Math.sin(angle) - 50;
+
+                    img.style.left = `${imgX}px`;
+                    img.style.top = `${imgY}px`;
+                });
             }
 
             setTimeout(processVideo, 0);
