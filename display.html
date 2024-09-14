@@ -38,14 +38,33 @@
             overflow: hidden;
             background: black;
         }
+
+        /* CSS for the green, hackerish, slightly transparent box */
+        #analyzing_box {
+            position: absolute;
+            color: lime;
+            background-color: rgba(0, 255, 0, 0.5); /* Slightly transparent green */
+            border: 2px solid lime;
+            font-family: 'Courier New', Courier, monospace;
+            font-size: 20px;
+            padding: 5px;
+            display: none; /* Hidden by default */
+            z-index: 20; /* Ensure it appears on top */
+            white-space: normal; /* Allow wrapping */
+            max-width: 700px; /* Start wrapping text when the width exceeds 400px */
+        }
     </style>
 </head>
 <body>
-    <video id="cam_input" height=1080 width=1920></video>
+    <video id="cam_input" height="480" width="640"></video>
     <canvas id="canvas_output"></canvas>
     <div id="image_container"></div>
 
+    <!-- The analyzing box for faceLock -->
+    <div id="analyzing_box">Analyzing</div>
+
     <script>
+    // 1080 x 1920
     function openCvReady() {
         cv['onRuntimeInitialized'] = () => {
             let video = document.getElementById("cam_input");
@@ -73,9 +92,11 @@
             });
 
             const FPS = 24;
+            let faceFocused = false;
             let faceTracked = false;
             let trackingStartTime = null;
-            const trackingThreshold = 3000;
+            const focusThreshold = 3000;
+            const trackingThreshold = 5000;
             let faceLocked = false;
             let imagesPlaced = false;
 
@@ -90,11 +111,14 @@
             function resetFaceLocking() {
                 faceLocked = false;
                 faceTracked = false;
+                faceFocused = false;
                 trackingStartTime = null;
 
                 // Clear the image container
                 const imageContainer = document.getElementById('image_container');
                 imageContainer.innerHTML = ''; // Clear any images
+                const analyzingBox = document.getElementById('analyzing_box');
+                analyzingBox.innerText = 'Analyzing'
 
                 imagesPlaced = false;
 
@@ -131,24 +155,52 @@
                 }
 
                 if (largestFace) {
-                    let point1 = new cv.Point(largestFace.x, largestFace.y);
-                    let point2 = new cv.Point(largestFace.x + largestFace.width, largestFace.y + largestFace.height);
+                    let point1 = new cv.Point(largestFace.x - 20, largestFace.y - 40);
+                    let point2 = new cv.Point(largestFace.x + largestFace.width + 20, largestFace.y + largestFace.height + 50);
                     let color = faceLocked ? [255, 0, 0, 255] : [0, 255, 0, 255];
+                    if (faceFocused) {
+                        color = [255, 255, 0, 255]
+                    }
                     cv.rectangle(dst, point1, point2, color, 2);
+
+                    // Position and display the analyzing box when faceLocked is true
+                    const analyzingBox = document.getElementById('analyzing_box');
+                    if (faceLocked) {
+                        const faceCenterX = largestFace.x + largestFace.width / 2;
+                        const faceCenterY = largestFace.y + largestFace.height / 2;
+                        analyzingBox.style.display = 'block';
+
+                        // Get the actual width of the analyzing box
+                        const boxWidth = analyzingBox.offsetWidth;
+                        const boxHeight = analyzingBox.offsetHeight;
+
+                        // Subtract half the width from the center of the face to center the box
+                        const boxX = (2.65 * faceCenterX) - (boxWidth / 2);
+                        const boxY = (2.26 * faceCenterY) - (boxHeight / 2) - 500;  // Position above the face
+
+                        analyzingBox.style.left = `${boxX}px`;
+                        analyzingBox.style.top = `${boxY}px`;
+                    } else {
+                        analyzingBox.style.display = 'none';  // Hide the box when face is not locked
+                    }
 
                     if (!trackingStartTime) {
                         trackingStartTime = Date.now();
                     } else if (Date.now() - trackingStartTime > trackingThreshold && !faceTracked) {
                         faceTracked = true;
+                        faceFocused = false;
 
                         if (!faceLocked) {
                             console.log("Face has been tracked for more than 3 seconds!");
                             captureFaceScreenshot(largestFace); 
                             faceLocked = true;
-                            displayScrapedImages(largestFace.x, largestFace.y, largestFace.width, largestFace.height);
+                            displayData(largestFace.x, largestFace.y, largestFace.width, largestFace.height);
                             imagesPlaced = true;
                         }
-                    }
+                    } else if (Date.now() - trackingStartTime > focusThreshold && !faceTracked) {
+                        faceFocused = true;
+
+                    } 
 
                     // Update image positions around the face as long as it is tracked
                     if (faceLocked && imagesPlaced) {
@@ -157,6 +209,11 @@
                 } else {
                     trackingStartTime = null;
                     faceTracked = false;
+                    faceFocused = false;
+
+                    // Hide the analyzing box if no face is detected
+                    const analyzingBox = document.getElementById('analyzing_box');
+                    analyzingBox.style.display = 'none';
                 }
 
                 try {
@@ -172,13 +229,13 @@
             function captureFaceScreenshot(face) {
                 let canvas = document.createElement('canvas');
                 let context = canvas.getContext('2d');
-                canvas.width = face.width;
-                canvas.height = face.height;
+                canvas.width = face.width + 60;
+                canvas.height = face.height + 130;
                 let canvasOutput = document.getElementById('canvas_output');
                 context.drawImage(
                     canvasOutput,
-                    face.x, face.y, face.width, face.height,
-                    0, 0, face.width, face.height
+                    face.x - 20, face.y - 40, face.width + 40, face.height + 90,
+                    0, 0, face.width + 40, face.height + 130
                 );
                 let faceImage = canvas.toDataURL('image/png');
                 downloadImage(faceImage, 'face_screenshot.png');
@@ -194,10 +251,15 @@
             }
 
             // Function to display the scraped images in a circle around the face
-            async function displayScrapedImages(faceX, faceY, faceWidth, faceHeight) {
+            async function displayData(faceX, faceY, faceWidth, faceHeight) {
                 try {
                     const response = await fetch('http://localhost:3000/scrape-images'); // Backend URL
                     const data = await response.json();
+                    console.log(data.text)
+                    if (data.text) {
+                        const analyzingBox = document.getElementById('analyzing_box');
+                        analyzingBox.innerText = data.text;
+                    }
 
                     if (data.success && Array.isArray(data.images) && data.images.length > 0) {
                         const imageContainer = document.getElementById('image_container');
@@ -207,7 +269,7 @@
                         const faceCenterX = faceX + faceWidth / 2;
                         const faceCenterY = faceY + faceHeight / 2;
 
-                        const radius = 300; // The radius for the circular placement of images
+                        const radius = 450; // The radius for the circular placement of images
                         const numImages = data.images.length;
                         const angleStep = (2 * Math.PI) / numImages; // The angle between each image
 
@@ -239,7 +301,7 @@
                 const faceCenterX = faceX + faceWidth / 2;
                 const faceCenterY = faceY + faceHeight / 2;
 
-                const radius = 200;
+                const radius = 250;
                 const imageContainer = document.getElementById('image_container');
                 const images = imageContainer.querySelectorAll('.scraped-image');
                 const numImages = images.length;
@@ -247,9 +309,8 @@
 
                 images.forEach((img, index) => {
                     const angle = index * angleStep;
-                    const imgX = faceCenterX + radius * Math.cos(angle) - 50;
-                    const imgY = faceCenterY + radius * Math.sin(angle) - 50;
-
+                    const imgX = (2.65 * faceCenterX) + (radius * Math.cos(angle)) - 50;
+                    const imgY = (2.26 * faceCenterY) + (radius * Math.sin(angle)) - 50 - 150;
                     img.style.left = `${imgX}px`;
                     img.style.top = `${imgY}px`;
                 });
