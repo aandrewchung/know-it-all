@@ -27,7 +27,7 @@ async function searchPimEyes(imageFilePath) {
     await page.evaluate(() => new Promise(resolve => setTimeout(resolve, 2000)));
 
     // Fill in login form
-    await page.type('input[type="email"].form-control', 'aandrewchung@gmail.com'); // Your email
+    await page.type('input[type="email"].form-control', 'hugomart716@gmail.com'); // Your email
     await page.type('input[type="password"].form-control', 'Hackproject123.');     // Your password
     await page.click('button[type="submit"]');          
 
@@ -35,7 +35,7 @@ async function searchPimEyes(imageFilePath) {
     await page.waitForNavigation({ waitUntil: 'networkidle2' });
 
     // Add a 2-second delay
-    await page.evaluate(() => new Promise(resolve => setTimeout(resolve, 2000)));
+    await page.evaluate(() => new Promise(resolve => setTimeout(resolve, 120000)));
 
     // Step 4: Upload the image for search
     await page.goto('https://pimeyes.com/en', { waitUntil: 'networkidle2' });
@@ -65,7 +65,7 @@ async function searchPimEyes(imageFilePath) {
     console.log('Image uploaded successfully');
 
     // Add a 5-second delay for the image to process and the popup to appear
-    await page.evaluate(() => new Promise(resolve => setTimeout(resolve, 5000)));
+    await page.evaluate(() => new Promise(resolve => setTimeout(resolve, 10000)));
 
     // Step 8: Check all the required checkboxes
     const checkboxes = await page.$$('input[type="checkbox"]');
@@ -149,7 +149,7 @@ async function searchPimEyes(imageFilePath) {
     fs.writeFileSync('imageUrls.json', JSON.stringify(imageUrls, null, 2));
     console.log('Image URLs saved to imageUrls.json');
 
-    return imageUrls; // Return the image URLs as a result
+    return imageUrls.length > 6 ? imageUrls.slice(0, 6) : imageUrls;
 
   } catch (error) {
     console.error('Error during PimEyes search:', error);
