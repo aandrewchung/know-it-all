@@ -34,7 +34,7 @@ Please analyze the text carefully to identify the most prominent individual befo
       model: "gpt-3.5-turbo", // Fallback to GPT-3.5 if GPT-4 is unavailable
       messages: [
         { role: "system", content: "You are a helpful assistant." },
-        { role: "user", content: userPrompt },
+        { role: "user", content: userPrompt.slice(0, 50000) },
       ],
     });
 
